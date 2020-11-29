@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+const { program } = require("commander");
+const figlet = require("figlet");
+const versionStr = figlet.textSync("QBlog");
+const Printer = require("@darkobits/lolcatjs");
+const shell = require("shelljs");
+let json2ts = require("json2ts");
+const _version = require("../package.json").version;
+const chalk = require("chalk");
+const inquirer = require("inquirer");
+const ora = require("ora");
+const download = require("download-git-repo");
+const util = require("./util");
+program.version(
+  Printer.default.fromString(
+    `   \n      vuepress博客脚手架${_version}       \n${versionStr}`
+  )
+);
+program.option("create", "创建项目");
+program.option("test", "测试命令");
+const step = [
+  chalk.green("① 💌 请输入项目名称："),
+  chalk.green(
+    "② 请输入项目Git地址，不填则后续需要自行修改代码以将博客发布到Git线上\n"
+  ) + chalk.yellow("如：https://github.com/qyunchao/vuepress-blog："),
+];
+const bindHandler = {
+  create(otherParmas) {
+    inquirer
+      .prompt([
+        {
+          type: "text",
+          message: step[0],
+          name: "dirname",
+        },
+        {
+          type: "text",
+          message: step[1],
+          name: "giturl",
+        },
+      ])
+      .then((answers) => {
+        // console.log(answers.dirname);
+        // 验证输入
+        if (!answers.dirname || answers.dirname.length <= 0) {
+          console.log(
+            chalk.red("未输入项目名，将以默认项目名 HelloBlog 进行创建")
+          );
+          answers.dirname = "HelloBlog";
+        }
+        const _pwd = shell.pwd().stdout;
+        const projectPath = `${_pwd}/${answers.dirname}`;
+        // console.log("用户的全路径", projectPath, answers.giturl);
+        shell.rm("-rf", projectPath);
+        shell.mkdir(projectPath);
+        const spinner = ora("⏰ downloading template.....");
+        spinner.start();
+        const template = "direct:https://github.com/qyunchao/vuepress-blog.git";
+        download(template, projectPath, { clone: true }, function (err) {
+          spinner.stop();
+          if (err) {
+            console.log(chalk.red("下载失败😭"));
+          } else {
+            shell.sed(
+              "-i",
+              "vuepress-blog",
+              answers.dirname,
+              projectPath + "/package.json"
+            );
+            if (util.checkGitUrl(answers.giturl)) {
+              let gitInfo = util.parseGitUrl(answers.giturl);
+              gitInfo.oldStr.map((str, index) => {
+                let fileObj = shell.exec(`grep ${str} -rl ${projectPath}/`);
+                let fileArr = fileObj.stdout.split("\n");
+                fileArr.pop();
+                shell.sed("-i", str, gitInfo.newStr[index], fileArr);
+              });
+            } else {
+              console.log(
+                chalk.red(
+                  "未输入正确项目地址，请参考 https://vuepress.vuejs.org/zh/guide/deploy.html#github-pages 自行配置部署相关内容"
+                )
+              );
+            }
+            console.log(chalk.green("√ 项目创建成功"));
+          }
+        });
+      });
+  },
+  test(params) {
+    console.log("获取到测试参数：" + params);
+  },
+};
+program
+  .usage("[cmd] <options>")
+  .arguments("<cmd> [env]")
+  .action(function (cmd, otherParmas) {
+    const handler = bindHandler[cmd];
+    if (typeof handler === "undefined") {
+      console.log(
+        chalk.red("命令 ") + chalk.blue(`${cmd}`) + chalk.red(" 暂未支持")
+      );
+    } else {
+      handler(otherParmas);
+    }
+    // console.log('cmd', cmd);
+    // console.log('otherParmas', otherParmas);
+  });
+program.parse(process.argv);
